@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Slowly Letter Exporter</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      font-size: 13px;
+      margin: 0;
+      padding: 14px;
+      width: 280px;
+      color: #1a1a1a;
+      background: #fafafa;
+      line-height: 1.45;
+    }
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 0 0 8px;
+      color: #2e3d4f;
+    }
+    p { margin: 0 0 12px; color: #444; font-size: 12px; }
+    button {
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #c8a97e;
+      color: #1a1a1a;
+    }
+    button:hover { filter: brightness(1.05); }
+    #hint { margin-top: 10px; font-size: 11px; color: #888; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Slowly Letter Exporter</h1>
+  <p>On Slowly, look for the <strong>✉ button</strong> at the bottom-right. Click it to open the exporter (same ~280px size as this popup). Use the toolbar icon here if you <strong>closed</strong> it.</p>
+  <button type="button" id="focusBtn">Show exporter on page</button>
+  <p id="hint"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
