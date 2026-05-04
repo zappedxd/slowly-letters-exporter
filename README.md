@@ -40,7 +40,7 @@ This extension is loaded manually via Chrome's developer mode.
 |---|---|
 | `activeTab`, `scripting` | Reads letter text and navigates through the thread |
 | `downloads` | Saves the exported file to your computer |
-| `host_permissions` | Scoped to `https://*.slowly.app/*` only |
+| `host_permissions` | Scoped to `https://.slowly.app/` only |
 
 ---
 
