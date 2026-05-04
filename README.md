@@ -26,7 +26,7 @@ This extension is loaded manually via Chrome's developer mode.
 
 ## Usage
 
-1. Log into [Slowly Web](https://web.slowly.app) and open a conversation thread
+1. Log into [Slowly Web](https://web.slowly.app) Open a conversation thread, then any letter.
 2. Click the floating envelope button at the bottom-right of the screen
    > If you dismissed it, click the extension icon in your toolbar to bring it back
 3. Choose your export format and settings
