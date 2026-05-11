@@ -267,7 +267,7 @@
     return {
       format,
       order,
-      structure: format === 'docx' ? structure : 'continuous',
+      structure: (format === 'docx' || format === 'pdf') ? structure : 'continuous',
     };
   }
 
@@ -382,6 +382,7 @@
     scroll.appendChild(
       fieldsetBlock('Format', 'slowly-exp-format', [
         { value: 'docx', label: 'DOCX' },
+        { value: 'pdf', label: 'PDF' },
         { value: 'txt', label: 'TXT' },
         { value: 'md', label: 'Markdown (.md)' },
       ])
@@ -393,7 +394,7 @@
       ])
     );
     scroll.appendChild(
-      fieldsetBlock('Structure (DOCX only)', 'slowly-exp-structure', [
+      fieldsetBlock('Structure (DOCX / PDF)', 'slowly-exp-structure', [
         { value: 'continuous', label: 'Continuous flow' },
         { value: 'pageBreak', label: 'Page break per letter' },
       ])
@@ -714,7 +715,7 @@
     const datePart = new Date().toISOString().slice(0, 10);
     let base = `${namesPart}_Slowly_Letter_${datePart}`;
     if (base.length > 200) base = base.slice(0, 200).replace(/_+$/, '');
-    const ext = formatKey === 'md' ? 'md' : formatKey === 'txt' ? 'txt' : 'docx';
+    const ext = formatKey === 'md' ? 'md' : formatKey === 'txt' ? 'txt' : formatKey === 'pdf' ? 'pdf' : 'docx';
     return `${base}.${ext}`;
   }
 
@@ -749,6 +750,323 @@
       if (idx < letters.length - 1) out += '---\n\n';
     });
     return out;
+  }
+
+  // ─── PDF ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Pure-JS PDF/1.4 builder — no external libs, no server.
+   * Supports: title page, per-letter heading + body, separator rules,
+   * and page-break-per-letter mode (mirrors DOCX structure option).
+   *
+   * Font: standard PDF Type1 "Times-Roman" / "Times-Bold" (always embedded in viewers).
+   * Page size: US Letter 612×792 pt.
+   */
+  function buildPdf(letters, structure) {
+    const pageBreakBetween = structure === 'pageBreak';
+
+    // ── page geometry ───────────────────────────────────────────────────────
+    const PW = 612, PH = 792;
+    const ML = 72, MR = 72, MT = 72, MB = 72;
+    const CW = PW - ML - MR; // content width
+
+    // ── font metrics (Times-Roman, 1000-unit em) ────────────────────────────
+    // These are approximate but consistent with Adobe's AFM widths for ASCII.
+    // We use a fixed-width estimate per char class for simplicity (good enough
+    // for line-wrapping — viewers render the real metrics).
+    function charWidth(ch, sizePt, bold) {
+      // Rough per-glyph widths scaled to 1000em. Non-ASCII mapped to ~500.
+      const code = ch.charCodeAt(0);
+      let w;
+      if (code < 32 || code > 126) {
+        w = bold ? 556 : 500;
+      } else {
+        // ASCII glyph widths (Times-Roman AFM, approximate)
+        const TRM = [
+          250,333,408,500,500,833,778,333,333,333,500,564,250,333,250,278,
+          500,500,500,500,500,500,500,500,500,500,278,278,564,564,564,444,
+          921,722,667,667,722,611,556,722,722,333,389,722,611,889,722,722,
+          556,722,667,556,611,722,722,944,722,722,611,333,278,333,469,500,
+          333,444,500,444,500,444,333,500,500,278,278,500,278,778,500,500,
+          500,500,333,389,278,500,500,722,500,500,444,480,200,480,541,
+        ];
+        const TBD = [
+          250,333,555,500,500,1000,833,333,333,333,500,570,250,333,250,278,
+          500,500,500,500,500,500,500,500,500,500,333,333,570,570,570,500,
+          930,722,667,722,722,667,611,778,778,389,500,778,667,944,722,778,
+          611,778,722,556,667,722,722,1000,722,722,667,333,278,333,581,500,
+          333,500,556,444,556,444,333,500,556,278,333,556,278,833,556,500,
+          556,556,444,389,333,556,500,722,500,500,444,394,220,394,520,
+        ];
+        const tbl = bold ? TBD : TRM;
+        const idx = code - 32;
+        w = (idx >= 0 && idx < tbl.length) ? tbl[idx] : 500;
+      }
+      return (w / 1000) * sizePt;
+    }
+
+    function textWidth(str, sizePt, bold) {
+      let w = 0;
+      for (const ch of str) w += charWidth(ch, sizePt, bold);
+      return w;
+    }
+
+    // ── word-wrap ────────────────────────────────────────────────────────────
+    function wrapText(str, maxWidth, sizePt, bold) {
+      const lines = [];
+      const rawLines = str.split('\n');
+      for (const raw of rawLines) {
+        const words = raw.split(' ');
+        let cur = '';
+        for (const word of words) {
+          const candidate = cur ? cur + ' ' + word : word;
+          if (textWidth(candidate, sizePt, bold) <= maxWidth) {
+            cur = candidate;
+          } else {
+            if (cur) lines.push(cur);
+            // hard-break very long words
+            let rest = word;
+            while (textWidth(rest, sizePt, bold) > maxWidth) {
+              let cut = 0;
+              let acc = 0;
+              for (const ch of rest) {
+                const cw = charWidth(ch, sizePt, bold);
+                if (acc + cw > maxWidth) break;
+                acc += cw;
+                cut += ch.length; // handles surrogate pairs
+              }
+              lines.push(rest.slice(0, cut || 1));
+              rest = rest.slice(cut || 1);
+            }
+            cur = rest;
+          }
+        }
+        if (cur) lines.push(cur);
+        else if (raw === '') lines.push(''); // preserve blank lines
+      }
+      return lines;
+    }
+
+    // ── PDF object builder ────────────────────────────────────────────────────
+    const objs = []; // each entry: string of PDF object content
+    const offsets = [];
+    let body = '';
+
+    function addObj(content) {
+      const num = objs.length + 1;
+      objs.push(content);
+      return num;
+    }
+
+    // ── layout engine ─────────────────────────────────────────────────────────
+    // We pre-render into "operations": each is { page, stream-fragment }
+    // so we can split across pages naturally.
+    const pages = []; // each page: array of stream-text lines
+    let curPage = [];
+    let y = PH - MT;
+
+    function newPage() {
+      pages.push(curPage);
+      curPage = [];
+      y = PH - MT;
+    }
+
+    function ensureSpace(needed) {
+      if (y - needed < MB) newPage();
+    }
+
+    const LINE_H_BODY = 14;   // 11pt body, 14pt leading
+    const LINE_H_H1   = 18;   // heading 1
+    const LINE_H_LABEL = 12;  // small label
+    const LINE_H_TITLE = 28;  // big title
+    const LINE_H_SUB  = 14;   // subtitle
+
+    function emitText(text, x, sizePt, bold, color) {
+      const font = bold ? '/F2' : '/F1';
+      const [r, g, b] = color || [0.17, 0.24, 0.31];
+      curPage.push(
+        `${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} rg`,
+        `BT ${font} ${sizePt} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfStr(text)}) Tj ET`
+      );
+    }
+
+    function emitCenteredText(text, sizePt, bold, color) {
+      const tw = textWidth(text, sizePt, bold);
+      const x = ML + (CW - tw) / 2;
+      emitText(text, x, sizePt, bold, color);
+    }
+
+    function emitHRule(color) {
+      const [r, g, b] = color || [0.784, 0.663, 0.47]; // #C8A97E
+      curPage.push(
+        `${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} RG`,
+        `0.5 w`,
+        `${ML} ${y.toFixed(2)} m ${(PW - MR).toFixed(2)} ${y.toFixed(2)} l S`
+      );
+    }
+
+    function pdfStr(s) {
+      // Escape special PDF string chars; non-Latin1 → '?' placeholder
+      let out = '';
+      for (const ch of s) {
+        const code = ch.charCodeAt(0);
+        if (code > 255) { out += '?'; continue; }
+        if (ch === '\\') { out += '\\\\'; continue; }
+        if (ch === '(') { out += '\\('; continue; }
+        if (ch === ')') { out += '\\)'; continue; }
+        if (ch === '\r') continue;
+        out += ch;
+      }
+      return out;
+    }
+
+    // ── title page ────────────────────────────────────────────────────────────
+    const exportedDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    // Vertically center title block: approx 3 lines
+    y = PH / 2 + 30;
+    emitCenteredText('Slowly Letters', 26, true, [0.1, 0.1, 0.1]);
+    y -= LINE_H_TITLE;
+    emitCenteredText(
+      `Exported ${exportedDate} \u00b7 ${letters.length} letter${letters.length !== 1 ? 's' : ''}`,
+      11, false, [0.53, 0.53, 0.53]
+    );
+    y -= 8;
+    // thin rule under subtitle
+    emitHRule([0.784, 0.663, 0.47]);
+
+    // start first letter page
+    newPage();
+
+    letters.forEach((letter, idx) => {
+      if (idx > 0 && pageBreakBetween) {
+        newPage();
+      } else if (idx > 0) {
+        // separator rule
+        ensureSpace(LINE_H_LABEL + LINE_H_H1 + LINE_H_BODY * 3 + 20);
+        y -= 10;
+        emitHRule([0.85, 0.77, 0.66]);
+        y -= 14;
+      }
+
+      // ── "Letter N of M" label ───────────────────────────────────────────
+      ensureSpace(LINE_H_LABEL + LINE_H_H1 + LINE_H_BODY * 2 + 10);
+      emitText(
+        `Letter ${idx + 1} of ${letters.length}`,
+        ML, 8, false, [0.69, 0.533, 0.314] // #B08850
+      );
+      y -= LINE_H_LABEL;
+
+      // ── heading: sender · date ──────────────────────────────────────────
+      ensureSpace(LINE_H_H1 + LINE_H_BODY * 2);
+      const heading = `${letter.sender}  \u00b7  ${letter.date}`;
+      const headLines = wrapText(heading, CW, 14, true);
+      headLines.forEach((hl, hi) => {
+        emitText(hl, ML, 14, true, [0.18, 0.24, 0.31]);
+        y -= LINE_H_H1;
+      });
+
+      // thin rule under heading
+      y += 2;
+      emitHRule([0.784, 0.663, 0.47]);
+      y -= 10;
+
+      // ── letter body ──────────────────────────────────────────────────────
+      const bodyLines = wrapText(letter.text, CW, 11, false);
+      bodyLines.forEach((line) => {
+        ensureSpace(LINE_H_BODY);
+        if (line !== '') {
+          emitText(line, ML, 11, false, [0.17, 0.17, 0.17]);
+        }
+        y -= LINE_H_BODY;
+      });
+    });
+
+    // push final page
+    pages.push(curPage);
+
+    // ── assemble PDF objects ─────────────────────────────────────────────────
+    // Obj 1: catalog (added last, refs pages dict which is obj 2)
+    // Obj 2: pages dict
+    // Obj 3: font Times-Roman
+    // Obj 4: font Times-Bold
+    // Obj 5…N+4: page objects
+    // Obj N+5…2N+4: page content streams
+
+    const totalPages = pages.length;
+    const CATALOG_NUM  = 1;
+    const PAGES_NUM    = 2;
+    const FONT1_NUM    = 3;
+    const FONT2_NUM    = 4;
+    const PAGE_START   = 5;
+    const STREAM_START = PAGE_START + totalPages;
+
+    // build streams first so we know lengths
+    const streamStrings = pages.map((ops) => ops.join('\n'));
+    const streamBytes   = streamStrings.map((s) => new TextEncoder().encode(s));
+
+    // Now write PDF body
+    let pdf = '%PDF-1.4\n%\xc2\xa5\xc2\xb1\xc3\xab\n'; // header + binary comment
+
+    function recordOffset() {
+      offsets.push(pdf.length);
+    }
+
+    function obj(num, content) {
+      recordOffset();
+      pdf += `${num} 0 obj\n${content}\nendobj\n`;
+    }
+
+    // catalog
+    obj(CATALOG_NUM, `<< /Type /Catalog /Pages ${PAGES_NUM} 0 R >>`);
+
+    // pages dict
+    const pageRefs = Array.from({ length: totalPages }, (_, i) => `${PAGE_START + i} 0 R`).join(' ');
+    obj(PAGES_NUM, `<< /Type /Pages /Kids [${pageRefs}] /Count ${totalPages} >>`);
+
+    // fonts
+    obj(FONT1_NUM, `<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>`);
+    obj(FONT2_NUM, `<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold /Encoding /WinAnsiEncoding >>`);
+
+    // page objects
+    const resourcesRef = `<< /Font << /F1 ${FONT1_NUM} 0 R /F2 ${FONT2_NUM} 0 R >> >>`;
+    for (let i = 0; i < totalPages; i++) {
+      const streamRef = STREAM_START + i;
+      obj(PAGE_START + i,
+        `<< /Type /Page /Parent ${PAGES_NUM} 0 R` +
+        ` /MediaBox [0 0 ${PW} ${PH}]` +
+        ` /Resources ${resourcesRef}` +
+        ` /Contents ${streamRef} 0 R >>`
+      );
+    }
+
+    // content streams (text, stored as Latin-1 encoded strings directly)
+    for (let i = 0; i < totalPages; i++) {
+      const bytes = streamBytes[i];
+      // We need byte length, not JS string length, because we'll encode as Latin-1
+      const len = bytes.length;
+      recordOffset();
+      pdf += `${STREAM_START + i} 0 obj\n<< /Length ${len} >>\nstream\n`;
+      // Append stream bytes as Latin-1 (they're ASCII so identical)
+      pdf += streamStrings[i] + '\nendstream\nendobj\n';
+    }
+
+    // xref table
+    const xrefOffset = pdf.length;
+    const objCount = STREAM_START + totalPages - 1 + 1; // 1-indexed last obj num + 1 for count
+    pdf += `xref\n0 ${objCount}\n`;
+    pdf += '0000000000 65535 f \n'; // obj 0
+
+    for (let i = 0; i < offsets.length; i++) {
+      pdf += offsets[i].toString().padStart(10, '0') + ' 00000 n \n';
+    }
+
+    pdf += `trailer\n<< /Size ${objCount} /Root ${CATALOG_NUM} 0 R >>\n`;
+    pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
+
+    return pdf;
   }
 
   // ─── DOCX ─────────────────────────────────────────────────────────────────
@@ -1214,6 +1532,11 @@
       } else if (options.format === 'md') {
         mimeType = 'text/markdown;charset=utf-8';
         base64 = utf8ToBase64(buildMarkdown(letters));
+      } else if (options.format === 'pdf') {
+        mimeType = 'application/pdf';
+        const pdfString = buildPdf(letters, options.structure || 'continuous');
+        // PDF is Latin-1 compatible ASCII — encode via strToBytes (UTF-8 safe for ASCII)
+        base64 = bytesToBase64(strToBytes(pdfString));
       } else {
         mimeType =
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
