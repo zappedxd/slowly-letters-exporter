@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Slowly Exporter</title>
+  <script type="module" crossorigin src="/assets/popup.html-CvjXW8Tu.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/popup-D5z6EYRN.css">
+</head>
+<body>
+  <h1>Slowly Exporter</h1>
+  
+  <fieldset>
+    <legend>Scope</legend>
+    <label><input type="radio" name="scope" value="current" checked> Current Letter</label>
+    <label><input type="radio" name="scope" value="all"> Entire Conversation</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Format</legend>
+    <label><input type="radio" name="format" value="html" checked> HTML ZIP (Recommended)</label>
+    <label><input type="radio" name="format" value="pdf"> PDF</label>
+    <label><input type="radio" name="format" value="docx"> DOCX</label>
+  </fieldset>
+
+  <button id="exportBtn">Export</button>
+  <p id="status"></p>
+
+</body>
+</html>
