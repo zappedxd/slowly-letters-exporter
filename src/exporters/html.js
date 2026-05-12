@@ -5,7 +5,8 @@ function getSafeName(str) {
 }
 
 function getShortDate(ts) {
-  return new Date(ts).toISOString().slice(0, 10);
+  const d = new Date(ts);
+  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
 }
 
 function generateHtmlContent(letters, receiver) {
@@ -46,6 +47,35 @@ function generateHtmlContent(letters, receiver) {
     </head>
     <body>
       <main>${lettersHtml}</main>
+      
+      <div id="lightbox" class="lightbox">
+        <span class="lightbox-close">&times;</span>
+        <img id="lightbox-img" class="lightbox-content">
+      </div>
+      
+      <script>
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const closeBtn = document.querySelector('.lightbox-close');
+        
+        document.querySelectorAll('.photos img, .stamp').forEach(img => {
+          img.addEventListener('click', () => {
+            lightbox.style.display = 'flex';
+            lightboxImg.src = img.src;
+            setTimeout(() => lightbox.classList.add('show'), 10);
+          });
+        });
+
+        const closeLightbox = () => {
+          lightbox.classList.remove('show');
+          setTimeout(() => lightbox.style.display = 'none', 300);
+        };
+
+        closeBtn.addEventListener('click', closeLightbox);
+        lightbox.addEventListener('click', (e) => {
+          if (e.target === lightbox) closeLightbox();
+        });
+      </script>
     </body>
     </html>
   `;
@@ -57,10 +87,18 @@ export async function exportToHtmlZip(letters, receiver, baseFilename) {
     'style.css': strToU8(`
       body { font-family: system-ui, sans-serif; background: #fafafa; color: #1a1a1a; padding: 2rem; max-width: 800px; margin: 0 auto; }
       .letter { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-      .stamp { float: right; width: 80px; height: 80px; }
-      .audio-player { background: #f3eddf; padding: 1rem; border-radius: 8px; border: 1px solid #c8a97e; margin-top: 1rem; }
+      .stamp { float: right; width: 80px; height: 80px; cursor: pointer; transition: transform 0.2s; }
+      .stamp:hover { transform: scale(1.05); }
+      .audio-player { background: #f3eddf; padding: 1rem; border-radius: 8px; border: 1px solid #c8a97e; margin-top: 1rem; width: fit-content; }
       .photos { display: flex; gap: 10px; margin-top: 1rem; overflow-x: auto; }
-      .photos img { max-height: 200px; border-radius: 8px; }
+      .photos img { max-height: 200px; border-radius: 8px; cursor: pointer; transition: transform 0.2s; }
+      .photos img:hover { transform: scale(1.05); }
+      .lightbox { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.8); opacity: 0; transition: opacity 0.3s ease; justify-content: center; align-items: center; }
+      .lightbox.show { opacity: 1; }
+      .lightbox-content { margin: auto; display: block; max-width: 90%; max-height: 90%; border-radius: 8px; transform: scale(0.8); transition: transform 0.3s ease; }
+      .lightbox.show .lightbox-content { transform: scale(1); }
+      .lightbox-close { position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; transition: 0.3s; z-index: 1001; }
+      .lightbox-close:hover, .lightbox-close:focus { color: #bbb; text-decoration: none; cursor: pointer; }
     `),
     'assets': {}
   };

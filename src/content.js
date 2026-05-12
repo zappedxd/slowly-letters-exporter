@@ -134,7 +134,7 @@ function extractCurrentLetter() {
     date:    timeIsoEl ? (timeIsoEl.innerText.trim().split('\n')[0].trim() || dateIso)
                        : (footer?.querySelector('p')?.innerText.trim().split('\n')[0].trim() || ''),
     dateIso,
-    dateStr: new Date(timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+    dateStr: new Date(timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     text,
     url:      location.pathname,
     stamp:    stampEl ? stampEl.src : '',
@@ -926,7 +926,8 @@ async function runExportEngine({ format, order, pageBreak }) {
     const penpal = letters.find(l => l.sender && l.sender !== receiver)?.sender || 'Unknown';
     const safePenpal = penpal.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
     const safeReceiver = receiver.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
-    const exportDate = new Date().toISOString().slice(0, 10);
+    const dateObj = new Date();
+    const exportDate = `${String(dateObj.getDate()).padStart(2, '0')}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${dateObj.getFullYear()}`;
     const baseFilename = `Slowly_${safeReceiver}_${safePenpal}_${exportDate}`;
     // ------------------------------------------------
 
