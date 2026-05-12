@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build output
+dist/
+build/
+*.zip
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Browser extension specific
+*.pem
+*.crx
+
+# Dependency cruft
+.npm
+.eslintcache
+.node_repl_history
