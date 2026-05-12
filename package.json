@@ -1,0 +1,21 @@
+{
+  "name": "slowly-exporter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.33",
+    "vite": "^5.4.21"
+  }
+}
