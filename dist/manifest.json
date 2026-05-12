@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Slowly Letter Exporter",
-  "version": "1.0.0",
-  "description": "Export Slowly web letters as HTML ZIP, DOCX, TXT, PDF, or Markdown.",
+  "version": "1.1.0",
+  "description": "Export Slowly web letters as DOCX, PDF, TXT, or Markdown.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -11,6 +11,9 @@
   "host_permissions": [
     "https://*.slowly.app/*"
   ],
+  "action": {
+    "default_title": "Slowly Letter Exporter"
+  },
   "background": {
     "service_worker": "service-worker-loader.js",
     "type": "module"
@@ -18,7 +21,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content.js-DsNOXg4K.js"
+        "assets/content.js-BhpnQUky.js"
       ],
       "matches": [
         "https://*.slowly.app/*"
@@ -32,7 +35,7 @@
         "https://*.slowly.app/*"
       ],
       "resources": [
-        "assets/content.js-DsNOXg4K.js"
+        "assets/content.js-BhpnQUky.js"
       ],
       "use_dynamic_url": false
     }
