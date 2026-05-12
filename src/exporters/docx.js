@@ -71,7 +71,7 @@ function createDrawingMl(rId, id, cx, cy) {
     </w:r>`;
 }
 
-export async function exportToDocx(letters, pageBreakPerLetter = false) {
+export async function exportToDocx(letters, receiver, pageBreakPerLetter = false, baseFilename) {
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
       <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -115,7 +115,7 @@ export async function exportToDocx(letters, pageBreakPerLetter = false) {
     const l = letters[index];
 
     bodyXml += `
-      <w:p><w:r><w:t>${escapeXml(l.sender)} · ${escapeXml(l.dateStr)}</w:t></w:r></w:p>
+      <w:p><w:r><w:t>${escapeXml(l.sender)} to ${escapeXml(receiver)} · ${escapeXml(l.dateStr)}</w:t></w:r></w:p>
       <w:p><w:r><w:t>---------------------------------</w:t></w:r></w:p>
     `;
 
@@ -207,5 +207,5 @@ export async function exportToDocx(letters, pageBreakPerLetter = false) {
   zipData['word/document.xml'] = strToU8(documentXml);
   zipData['word/_rels/document.xml.rels'] = strToU8(relsXml);
 
-  return { filename: `Slowly_DOCX_${Date.now()}.docx`, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', bytes: zipSync(zipData) };
+  return { filename: `${baseFilename}.docx`, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', bytes: zipSync(zipData) };
 }

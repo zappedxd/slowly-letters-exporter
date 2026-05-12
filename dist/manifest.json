@@ -21,7 +21,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content.js-BhpnQUky.js"
+        "assets/content.js-_MyLPM6V.js"
       ],
       "matches": [
         "https://*.slowly.app/*"
@@ -35,7 +35,7 @@
         "https://*.slowly.app/*"
       ],
       "resources": [
-        "assets/content.js-BhpnQUky.js"
+        "assets/content.js-_MyLPM6V.js"
       ],
       "use_dynamic_url": false
     }

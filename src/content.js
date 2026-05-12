@@ -40,6 +40,29 @@ function parseFlexibleDate(dateRaw, timestampRaw) {
 
 // ─── 2. DOM EXTRACTION ────────────────────────────────────────────────────────
 
+function getCurrentUserName() {
+  // Look for the user's avatar in the header — the alt attribute contains the username
+  const headerAvatar = document.querySelector('header img.rounded-circle[alt]');
+  if (headerAvatar) {
+    const username = headerAvatar.getAttribute('alt')?.trim();
+    if (username && username.length > 2 && username.length < 30) {
+      return username;
+    }
+  }
+  
+  // Fallback: Try to find avatar in top navigation
+  const navAvatars = document.querySelectorAll('img[alt][src*="avatar"]');
+  for (const avatar of navAvatars) {
+    const username = avatar.getAttribute('alt')?.trim();
+    if (username && username.length > 2 && username.length < 30 && 
+        !['Logout', 'Settings', 'Profile'].includes(username)) {
+      return username;
+    }
+  }
+  
+  return 'Me';
+}
+
 function findLetterBodyEl() {
   const dialog    = document.querySelector('[role="dialog"]');
   const modalBody =
@@ -101,10 +124,12 @@ function extractCurrentLetter() {
   const rawDateStr = footer?.innerText || '';
   const timestamp  = parseFlexibleDate(rawDateStr, dateIso);
 
+  const currentUser = getCurrentUserName();
+
   return {
     id: crypto.randomUUID(),
     sender: senderEl ? senderEl.innerText.trim() : 'Unknown',
-    receiver: 'Me',
+    receiver: currentUser,
     timestamp,
     date:    timeIsoEl ? (timeIsoEl.innerText.trim().split('\n')[0].trim() || dateIso)
                        : (footer?.querySelector('p')?.innerText.trim().split('\n')[0].trim() || ''),
@@ -896,14 +921,23 @@ async function runExportEngine({ format, order, pageBreak }) {
 
     setPanelStatus(`Formatting ${letters.length} letter${letters.length === 1 ? '' : 's'}…`, 'working');
 
+    // --- Generate standardized base filename with both sender and receiver ---
+    const receiver = letters[0]?.receiver || 'Me';
+    const penpal = letters.find(l => l.sender && l.sender !== receiver)?.sender || 'Unknown';
+    const safePenpal = penpal.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+    const safeReceiver = receiver.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+    const exportDate = new Date().toISOString().slice(0, 10);
+    const baseFilename = `Slowly_${safeReceiver}_${safePenpal}_${exportDate}`;
+    // ------------------------------------------------
+
     let exportData;
     switch (format) {
-      case 'html': exportData = await exportToHtmlZip(letters);          break;
-      case 'pdf':  exportData = await exportToPdf(letters, pageBreak);   break;
-      case 'docx': exportData = await exportToDocx(letters, pageBreak);  break;
-      case 'md':   exportData = await exportToMarkdown(letters);         break;
-      case 'txt':  exportData = await exportToTxt(letters);              break;
-      default: throw new Error('Unknown format.');
+      case 'html': exportData = await exportToHtmlZip(letters, receiver, baseFilename);          break;
+      case 'pdf':  exportData = await exportToPdf(letters, receiver, pageBreak, baseFilename);   break;
+      case 'docx': exportData = await exportToDocx(letters, receiver, pageBreak, baseFilename);  break;
+      case 'md':   exportData = await exportToMarkdown(letters, receiver, baseFilename);         break;
+      case 'txt':  exportData = await exportToTxt(letters, receiver, baseFilename);              break;
+      default: throw new Error('Unknown format');
     }
 
     if (isCancelled) throw new Error('Export cancelled before finalising.');

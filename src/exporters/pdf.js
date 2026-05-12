@@ -37,7 +37,7 @@ async function safeEmbedImage(pdfDoc, bytes) {
   }
 }
 
-export async function exportToPdf(letters, pageBreakPerLetter = false) {
+export async function exportToPdf(letters, receiver, pageBreakPerLetter = false, baseFilename) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
   const boldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
@@ -74,10 +74,11 @@ export async function exportToPdf(letters, pageBreakPerLetter = false) {
     }
 
     const safeSender = stripUnsupported(l.sender);
+    const safeReceiver = stripUnsupported(receiver);
     const safeDate = stripUnsupported(l.dateStr);
 
     // Header
-    page.drawText(`${safeSender} · ${safeDate}`, { x: 50, y, size: 16, font: boldFont, color: rgb(0.18, 0.24, 0.31) });
+    page.drawText(`${safeSender} to ${safeReceiver} · ${safeDate}`, { x: 50, y, size: 16, font: boldFont, color: rgb(0.18, 0.24, 0.31) });
     
     // Draw Stamp & Chop
     if (l.assets && l.assets.stampBytes) {
@@ -148,5 +149,5 @@ export async function exportToPdf(letters, pageBreakPerLetter = false) {
   }
 
   const pdfBytes = await pdfDoc.save();
-  return { filename: `Slowly_PDF_${Date.now()}.pdf`, mimeType: 'application/pdf', bytes: pdfBytes };
+  return { filename: `${baseFilename}.pdf`, mimeType: 'application/pdf', bytes: pdfBytes };
 }
