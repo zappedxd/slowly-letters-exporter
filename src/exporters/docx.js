@@ -5,7 +5,37 @@ function escapeXml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Helper to generate strict MS Word DrawingML for images (size in EMUs: 1 inch = 914400)
+// Dynamically calculates correct dimensions to prevent aspect-ratio squishing
+async function getImageDimsEMU(bytes, maxWidthEMU) {
+  return new Promise((resolve) => {
+    const blob = new Blob([bytes]);
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      // 1 pixel is roughly 9525 EMUs at 96 DPI
+      let cx = img.width * 9525;
+      let cy = img.height * 9525;
+      
+      // Scale down proportionally if it exceeds the max width (e.g., page margins)
+      if (cx > maxWidthEMU) {
+        const ratio = maxWidthEMU / cx;
+        cx = maxWidthEMU;
+        cy = Math.round(cy * ratio);
+      }
+      resolve({ cx: Math.round(cx), cy: Math.round(cy) });
+    };
+    
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ cx: maxWidthEMU, cy: maxWidthEMU }); // Fallback
+    };
+    
+    img.src = url;
+  });
+}
+
 function createDrawingMl(rId, id, cx, cy) {
   return `
     <w:r>
@@ -41,8 +71,7 @@ function createDrawingMl(rId, id, cx, cy) {
     </w:r>`;
 }
 
-export async function exportToDocx(letters) {
-  // 1. Required static MS Word files
+export async function exportToDocx(letters, pageBreakPerLetter = false) {
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
       <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -58,7 +87,6 @@ export async function exportToDocx(letters) {
       <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
     </Relationships>`;
 
-  // Base styles including the required 'Normal' style
   const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
       <w:docDefaults>
@@ -78,38 +106,38 @@ export async function exportToDocx(letters) {
   };
 
   let bodyXml = '';
-  
-  // rId1 is strictly reserved for styles.xml, so images must start at rId2
   let relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\n`;
 
   let imgCount = 1;
   let relCount = 2;
 
-  for (const l of letters) {
-    // Header
+  for (let index = 0; index < letters.length; index++) {
+    const l = letters[index];
+
     bodyXml += `
       <w:p><w:r><w:t>${escapeXml(l.sender)} · ${escapeXml(l.dateStr)}</w:t></w:r></w:p>
       <w:p><w:r><w:t>---------------------------------</w:t></w:r></w:p>
     `;
 
-    // Add Stamp and Chop
     let headerImagesXml = '';
     
     if (l.assets && l.assets.chopBytes) {
+      const dims = await getImageDimsEMU(l.assets.chopBytes, 400000); // Small chop max width
       const filename = `chop${imgCount}.png`;
       const rId = `rId${relCount}`;
       zipData[`word/media/${filename}`] = l.assets.chopBytes;
       relsXml += `  <Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${filename}"/>\n`;
-      headerImagesXml += createDrawingMl(rId, imgCount, 400000, 400000); // Small chop
+      headerImagesXml += createDrawingMl(rId, imgCount, dims.cx, dims.cy);
       imgCount++; relCount++;
     }
 
     if (l.assets && l.assets.stampBytes) {
+      const dims = await getImageDimsEMU(l.assets.stampBytes, 800000); // Stamp max width
       const filename = `stamp${imgCount}.png`;
       const rId = `rId${relCount}`;
       zipData[`word/media/${filename}`] = l.assets.stampBytes;
       relsXml += `  <Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${filename}"/>\n`;
-      headerImagesXml += createDrawingMl(rId, imgCount, 800000, 800000); // Standard stamp
+      headerImagesXml += createDrawingMl(rId, imgCount, dims.cx, dims.cy);
       imgCount++; relCount++;
     }
 
@@ -117,21 +145,21 @@ export async function exportToDocx(letters) {
       bodyXml += `<w:p>${headerImagesXml}</w:p>`;
     }
 
-    // Text Body
     const lines = l.text.split('\n');
     for (const line of lines) {
       bodyXml += `<w:p><w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`;
     }
 
-    // Audio Placeholder
     if (l.audio && l.audio.duration) {
       bodyXml += `<w:p><w:r><w:t xml:space="preserve">[ 🎵 Voice Note Attached: ${escapeXml(l.audio.duration)} ]</w:t></w:r></w:p>`;
     }
 
-    // Embedded Photos
     if (l.assets && l.assets.photoBytes && l.assets.photoBytes.length > 0) {
       for (const bytes of l.assets.photoBytes) {
         if (!bytes) continue;
+        
+        // 5500000 EMU is just over 6 inches (perfect fit within standard Word margins)
+        const dims = await getImageDimsEMU(bytes, 5500000); 
         
         const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
         const ext = isPng ? 'png' : 'jpg';
@@ -140,18 +168,28 @@ export async function exportToDocx(letters) {
 
         zipData[`word/media/${filename}`] = bytes;
         relsXml += `  <Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${filename}"/>\n`;
-        bodyXml += `<w:p>${createDrawingMl(rId, imgCount, 3000000, 3000000)}</w:p>`; // Large photo
+        bodyXml += `<w:p>${createDrawingMl(rId, imgCount, dims.cx, dims.cy)}</w:p>`;
         
         imgCount++; relCount++;
       }
     }
 
-    bodyXml += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+    if (index < letters.length - 1) {
+      if (pageBreakPerLetter) {
+        bodyXml += `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
+      } else {
+        bodyXml += `
+          <w:p>
+            <w:pPr><w:spacing w:before="300" w:after="300"/><w:jc w:val="center"/></w:pPr>
+            <w:r><w:t>  •  •  •  </w:t></w:r>
+          </w:p>
+        `;
+      }
+    }
   }
 
   relsXml += `</Relationships>`;
 
-  // Root XML with strictly just w, r, and wp namespaces
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <w:document 
     xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"

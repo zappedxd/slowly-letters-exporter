@@ -1,12 +1,10 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
-// Strips emojis and non-Latin characters to prevent font crashing
 function stripUnsupported(str) {
   if (!str) return '';
   return str.replace(/[^\x00-\xFF]/g, '');
 }
 
-// Dynamically measures text width to wrap lines perfectly
 function wrapParagraphs(text, maxWidth, font, fontSize) {
   const paragraphs = text.split('\n');
   const lines = [];
@@ -33,22 +31,47 @@ function wrapParagraphs(text, maxWidth, font, fontSize) {
   return lines;
 }
 
-// Helper to safely embed an image, trying PNG then JPG
 async function safeEmbedImage(pdfDoc, bytes) {
   try { return await pdfDoc.embedPng(bytes); } catch {
     try { return await pdfDoc.embedJpg(bytes); } catch { return null; }
   }
 }
 
-export async function exportToPdf(letters) {
+export async function exportToPdf(letters, pageBreakPerLetter = false) {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
   const boldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
+  let page = pdfDoc.addPage([612, 792]); // US Letter
+  let y = 720; // Top margin
+
   for (let idx = 0; idx < letters.length; idx++) {
     const l = letters[idx];
-    let page = pdfDoc.addPage([612, 792]); // US Letter
-    let y = 720; // Top margin
+
+    // Handle space between letters if not the first letter
+    if (idx > 0) {
+      if (pageBreakPerLetter) {
+        page = pdfDoc.addPage([612, 792]);
+        y = 720;
+      } else {
+        y -= 40; // Add breathing room
+        if (y < 100) {
+          // Force new page if we are too far down to start a new letter neatly
+          page = pdfDoc.addPage([612, 792]);
+          y = 720;
+        } else {
+          // Draw continuous flow divider
+          page.drawLine({ start: { x: 250, y }, end: { x: 362, y }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
+          y -= 30;
+        }
+      }
+    }
+
+    // Safety check just in case
+    if (y < 50) { 
+      page = pdfDoc.addPage([612, 792]); 
+      y = 720; 
+    }
 
     const safeSender = stripUnsupported(l.sender);
     const safeDate = stripUnsupported(l.dateStr);
@@ -56,7 +79,7 @@ export async function exportToPdf(letters) {
     // Header
     page.drawText(`${safeSender} · ${safeDate}`, { x: 50, y, size: 16, font: boldFont, color: rgb(0.18, 0.24, 0.31) });
     
-    // Draw Stamp & Chop (Top Right)
+    // Draw Stamp & Chop
     if (l.assets && l.assets.stampBytes) {
       const stampImg = await safeEmbedImage(pdfDoc, l.assets.stampBytes);
       if (stampImg) {
@@ -75,11 +98,11 @@ export async function exportToPdf(letters) {
 
     y -= 30;
     
-    // Separator line
+    // Separator line under header
     page.drawLine({ start: { x: 50, y }, end: { x: 562, y }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
     y -= 20;
 
-    // Body Text with true word wrapping
+    // Body Text with wrapping
     const maxWidth = 512; 
     const wrappedLines = wrapParagraphs(stripUnsupported(l.text), maxWidth, font, 11);
 
